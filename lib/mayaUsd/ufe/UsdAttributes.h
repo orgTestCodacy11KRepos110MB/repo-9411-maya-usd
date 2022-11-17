@@ -57,6 +57,8 @@ public:
     Ufe::Attribute::Ptr      attribute(const std::string& name) override;
     std::vector<std::string> attributeNames() const override;
     bool                     hasAttribute(const std::string& name) const override;
+    std::string              getLayout() const override;
+    bool                     setLayout(const std::string& layout) override;
 #ifdef UFE_V4_FEATURES_AVAILABLE
 #if (UFE_PREVIEW_VERSION_NUM >= 4024)
 #if (UFE_PREVIEW_VERSION_NUM >= 4034)
@@ -100,6 +102,9 @@ public:
         const std::string&       newName);
 #endif
 #endif
+    static bool canSetAttributesLayout(const UsdSceneItem::Ptr& item, const std::string& layout);
+    static void doSetLayout(const UsdSceneItem::Ptr& item, const std::string& layout);
+    Ufe::UndoableCommand::Ptr setAttributesLayoutCmd(const std::string& layout) override;
 
 private:
     UsdSceneItem::Ptr fItem;

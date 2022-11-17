@@ -307,6 +307,18 @@ bool UsdAttributes::hasAttribute(const std::string& name) const
     return false;
 }
 
+std::string UsdAttributes::getLayout() const
+{
+    // TODO
+    return "";
+}
+
+bool UsdAttributes::setLayout(const std::string& layout)
+{
+    // TODO (probably not correct and to remove)
+    return false;
+}
+
 #ifdef UFE_V4_FEATURES_AVAILABLE
 #if (UFE_PREVIEW_VERSION_NUM >= 4024)
 #if (UFE_PREVIEW_VERSION_NUM >= 4034)
@@ -602,6 +614,30 @@ Ufe::Attribute::Ptr UsdAttributes::doRenameAttribute(
     return renamedAttr;
 }
 #endif
+bool UsdAttributes::canSetAttributesLayout(const UsdSceneItem::Ptr& item, const std::string& layout)
+{
+    if (UsdAttributes(item).getLayout() != layout) {
+        return true;
+    }
+
+    return false;
+}
+void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string& layout)
+{
+    // UsdAttributes(item).setLayout(layout);
+    auto prim = item->prim();
+
+    if (prim) {
+        PXR_NS::TfToken metaDataKey("NodeLayout");
+        prim.SetMetadata(metaDataKey, layout);
+    }
+
+    // TODO
+}
+Ufe::UndoableCommand::Ptr UsdAttributes::setAttributesLayoutCmd(const std::string& layout)
+{
+    return UsdSetAttributesLayoutCommand::create(fItem, layout);
+}
 #endif
 } // namespace ufe
 } // namespace MAYAUSD_NS_DEF

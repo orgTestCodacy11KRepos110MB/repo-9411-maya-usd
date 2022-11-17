@@ -156,6 +156,32 @@ private:
 }; // UsdRenameAttributeCommand
 
 #endif
+
+//! \brief Implementation of SetAttributesLayoutCommand
+class UsdSetAttributesLayoutCommand : public UsdUndoableCommand<Ufe::UndoableCommand>
+{
+public:
+    typedef std::shared_ptr<UsdSetAttributesLayoutCommand> Ptr;
+
+    UsdSetAttributesLayoutCommand(const UsdSceneItem::Ptr& sceneItem, const std::string& layout);
+    ~UsdSetAttributesLayoutCommand() override;
+
+    // Delete the copy/move constructors assignment operators.
+    UsdSetAttributesLayoutCommand(const UsdSetAttributesLayoutCommand&) = delete;
+    UsdSetAttributesLayoutCommand& operator=(const UsdSetAttributesLayoutCommand&) = delete;
+    UsdSetAttributesLayoutCommand(UsdSetAttributesLayoutCommand&&) = delete;
+    UsdSetAttributesLayoutCommand& operator=(UsdSetAttributesLayoutCommand&&) = delete;
+
+    //! Create a UsdSetAttributesLayoutCommand
+    static UsdSetAttributesLayoutCommand::Ptr
+    create(const UsdSceneItem::Ptr& sceneItem, const std::string& layout);
+
+    void executeUndoBlock() override;
+
+private:
+    const Ufe::Path   _sceneItemPath;
+    const std::string _layout;
+}; // UsdRemoveAttributeCommand
 #endif
 } // namespace ufe
 } // namespace MAYAUSD_NS_DEF

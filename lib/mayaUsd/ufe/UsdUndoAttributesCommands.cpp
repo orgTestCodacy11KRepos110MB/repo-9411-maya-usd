@@ -166,6 +166,33 @@ Ufe::Attribute::Ptr UsdRenameAttributeCommand::attribute() const
 void UsdRenameAttributeCommand::setNewName(const std::string& newName) { _newName = newName; };
 
 #endif
+
+UsdSetAttributesLayoutCommand::UsdSetAttributesLayoutCommand(
+    const UsdSceneItem::Ptr& sceneItem,
+    const std::string&       layout)
+    : UsdUndoableCommand<Ufe::UndoableCommand>()
+    , _sceneItemPath(sceneItem->path())
+    , _layout(layout)
+{
+}
+
+UsdSetAttributesLayoutCommand::~UsdSetAttributesLayoutCommand() { }
+
+UsdSetAttributesLayoutCommand::Ptr
+UsdSetAttributesLayoutCommand::create(const UsdSceneItem::Ptr& sceneItem, const std::string& layout)
+{
+    if (UsdAttributes::canSetAttributesLayout(sceneItem, layout)) {
+        return std::make_shared<UsdSetAttributesLayoutCommand>(sceneItem, layout);
+    }
+    return nullptr;
+}
+
+void UsdSetAttributesLayoutCommand::executeUndoBlock()
+{
+    auto sceneItem
+        = std::dynamic_pointer_cast<UsdSceneItem>(Ufe::Hierarchy::createItem(_sceneItemPath));
+    UsdAttributes::doSetLayout(sceneItem, _layout);
+}
 #endif
 
 } // namespace ufe
