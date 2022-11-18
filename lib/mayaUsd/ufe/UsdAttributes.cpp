@@ -38,6 +38,7 @@
 #if (UFE_PREVIEW_VERSION_NUM >= 4024)
 #include <mayaUsd/ufe/UsdUndoAttributesCommands.h>
 #endif
+#include "../utils/json.h"
 #endif
 
 // Note: normally we would use this using directive, but here we cannot because
@@ -622,13 +623,96 @@ bool UsdAttributes::canSetAttributesLayout(const UsdSceneItem::Ptr& item, const 
 
     return false;
 }
+
+struct uifolder
+{
+    std::vector<std::string> uigroup;
+    std::vector<int>         uiorder;
+};
+struct uiattribute
+{
+    std::string attributeName;
+    uifolder    folder;
+};
+
+static std::vector<uiattribute>
+getAttributeLayoutPosition(JsObject& jsonToInspect, int uiorder, uifolder& folderInfo)
+{
+
+    std::vector<uiattribute> uiAttributes;
+
+    if (jsonToInspect.find("items") != jsonToInspect.end()
+        && jsonToInspect.find("group") != jsonToInspect.end()) {
+        auto jsonValueGroupItems = jsonToInspect["items"];
+
+        // Save the folder nested layout (name and position).
+        const std::string groupName = jsonToInspect["group"].GetString();
+        folderInfo.uigroup.push_back(groupName);
+        folderInfo.uiorder.push_back(uiorder);
+
+        int groupOrder = 1;
+        for (auto& groupJsValue : jsonValueGroupItems.GetJsArray()) {
+            auto jsonGroup = groupJsValue.GetJsObject();
+            getAttributeLayoutPosition(jsonGroup, groupOrder, folderInfo);
+            ++groupOrder;
+        }
+
+    } else {
+        // We found the attributes.
+        int position = 1;
+
+        for (const auto& attrJsValue : jsonToInspect) {
+            const std::string attrName = attrJsValue.second.GetString();
+            uiattribute       attrUi;
+            attrUi.attributeName = attrName;
+            attrUi.folder = folderInfo;
+            // Save attr position inside the group.
+            attrUi.folder.uiorder.push_back(position);
+            uiAttributes.push_back(attrUi);
+            ++position;
+        }
+    }
+
+    return uiAttributes;
+}
 void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string& layout)
 {
     // UsdAttributes(item).setLayout(layout);
     auto prim = item->prim();
+    try {
+        JsParseError parseError;
+        auto         jsonValue = JsParseString(layout, &parseError);
+        if (jsonValue) {
+            auto jsonObj = jsonValue.GetJsObject();
+            // Find the root.
+            if (jsonObj.find("NodeLayout") != jsonObj.end()) {
+                auto jsonValueRoot = jsonObj["NodeLayout"];
+                auto jsonGroupItems = jsonValueRoot.GetJsObject();
 
+                // Start inspecting all groups.
+                if (jsonGroupItems.find("items") != jsonGroupItems.end()) {
+                    auto                     jsonValueGroupItems = jsonGroupItems["items"];
+                    std::vector<uiattribute> uiAttrs;
+
+                    int groupOrder = 1;
+                    for (auto& group : jsonValueGroupItems.GetJsArray()) {
+                        uifolder folderInfo;
+                        auto     groupJson = group.GetJsObject();
+                        auto     attrsLayout
+                            = getAttributeLayoutPosition(groupJson, groupOrder, folderInfo);
+                        ++groupOrder;
+                        if (!attrsLayout.empty()) {
+                            uiAttrs.insert(uiAttrs.end(), attrsLayout.begin(), attrsLayout.end());
+                        }
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        return;
+    }
     if (prim) {
-        PXR_NS::TfToken metaDataKey("NodeLayout");
+        PXR_NS::TfToken metaDataKey("UILayout");
         prim.SetMetadata(metaDataKey, layout);
     }
 
