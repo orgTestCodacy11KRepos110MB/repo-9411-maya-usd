@@ -634,6 +634,92 @@ struct uiattribute
     std::string attributeName;
     uifolder    folder;
 };
+
+static bool getAttributeLayoutMetaData(const Ufe::Attribute::Ptr attribute, uiattribute& attrLayout)
+{
+    JsParseError parseError;
+    bool         validAttrLayout = false;
+    auto         metaDataUIOrder = attribute->getMetadata("uiorder");
+
+    if (!metaDataUIOrder.empty()) {
+        std::string uiOrderString = metaDataUIOrder.get<std::string>();
+        auto        jsonValue = JsParseString(uiOrderString, &parseError);
+
+        if (jsonValue) {
+            for (const auto& orderJsValue : jsonValue.GetJsArray()) {
+                auto orderJs = orderJsValue.GetJsObject();
+
+                if (orderJs.find("order") != orderJs.end()) {
+                    try {
+                        auto orderString = orderJs["order"].GetString();
+                        int  order = std::stoi(orderString);
+                        attrLayout.folder.uiorder.push_back(order);
+                    } catch (...) {
+                    }
+                }
+            }
+            validAttrLayout = true;
+        }
+    }
+
+    auto metaDataUIGroup = attribute->getMetadata("uigroup");
+
+    if (!metaDataUIGroup.empty() && validAttrLayout) {
+        std::string uiGroupString = metaDataUIGroup.get<std::string>();
+        auto        jsonValue = JsParseString(uiGroupString, &parseError);
+
+        if (jsonValue) {
+            for (const auto& groupJsValue : jsonValue.GetJsArray()) {
+                auto groupJs = groupJsValue.GetJsObject();
+
+                if (groupJs.find("group") != groupJs.end()) {
+                    attrLayout.folder.uigroup.push_back(groupJs["group"].GetString());
+                }
+            }
+        } else {
+            validAttrLayout = false;
+        }
+    }
+
+    if (validAttrLayout) {
+        const std::string prefix = "inputs:";
+        std::string       attrName = attribute->name();
+        std::size_t       pos = attrName.find(prefix);
+        if (pos != std::string::npos) {
+            attrName.erase(pos, prefix.length());
+            attrLayout.attributeName = attrName;
+        } else {
+            validAttrLayout = false;
+        }
+    }
+
+    return validAttrLayout;
+}
+/*
+std::string UsdAttributes::buildLayout()
+{
+    std::vector<uiattribute> attrWithUILayout;
+
+    for (const auto& attrName : attributeNames()) {
+        if (!hasAttribute(attrName)) {
+            continue;
+        }
+        auto attr = attribute(attrName);
+        if (attr->hasMetadata("uiorder") && attr->hasMetadata("uigroup")) {
+            //attrWithUILayout.push_back(getAttributeLayoutMetaData(attr));
+        }
+    }
+
+    auto orderGroups
+        = [](const Ufe::Attribute::Ptr& attr1, const Ufe::Attribute::Ptr& attr2) -> bool {
+        return a.mProperty > b.mProperty;
+    };
+
+
+    // Order the attribute based on uiorder
+    return "";
+}
+*/
 static bool
 setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute& uiAttr)
 {
@@ -650,7 +736,7 @@ setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute
     JsArray orderJsValues;
     for (const auto& order : uiAttr.folder.uiorder) {
         JsObject jsObj;
-        jsObj["order"] = JsValue(order);
+        jsObj["order"] = JsValue(std::to_string(order));
         orderJsValues.push_back(JsValue(jsObj));
     }
     const auto        orderJsValue = JsValue(orderJsValues);
@@ -668,7 +754,9 @@ setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute
     const std::string groupJsString = JsWriteToString(groupJsValue);
     success = success && attribute->setMetadata("uigroup", Ufe::Value(groupJsString));
 
-    return success;
+    uiattribute tmp;
+    auto        test = getAttributeLayoutMetaData(attribute, tmp);
+    return success && test;
 }
 
 static void setAttributesLayoutMetaData(
@@ -715,7 +803,6 @@ static void setAttributesLayoutMetaData(
 }
 void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string& layout)
 {
-    // UsdAttributes(item).setLayout(layout);
     auto prim = item->prim();
     try {
         JsParseError parseError;
