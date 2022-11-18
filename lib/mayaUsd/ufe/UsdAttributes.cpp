@@ -634,12 +634,52 @@ struct uiattribute
     std::string attributeName;
     uifolder    folder;
 };
-
-static std::vector<uiattribute>
-getAttributeLayoutPosition(JsObject& jsonToInspect, int uiorder, uifolder& folderInfo)
+static bool
+setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute& uiAttr)
 {
+    // Only input attributes can have layout.
+    const std::string kAttrName = "inputs:" + uiAttr.attributeName;
+    if (!sceneItem || !UsdAttributes(sceneItem).hasAttribute(kAttrName)) {
+        return false;
+    }
 
-    std::vector<uiattribute> uiAttributes;
+    auto attribute = UsdAttributes(sceneItem).attribute(kAttrName);
+    bool success = false;
+
+    // Build json for order.
+    JsArray orderJsValues;
+    for (const auto& order : uiAttr.folder.uiorder) {
+        JsObject jsObj;
+        jsObj["order"] = JsValue(order);
+        orderJsValues.push_back(JsValue(jsObj));
+    }
+    const auto        orderJsValue = JsValue(orderJsValues);
+    const std::string orderJsString = JsWriteToString(orderJsValue);
+    success = attribute->setMetadata("uiorder", Ufe::Value(orderJsString));
+
+    // Build json for group names.
+    JsArray groupJsValues;
+    for (const auto& group : uiAttr.folder.uigroup) {
+        JsObject jsObj;
+        jsObj["group"] = JsValue(group);
+        groupJsValues.push_back(JsValue(jsObj));
+    }
+    const auto        groupJsValue = JsValue(groupJsValues);
+    const std::string groupJsString = JsWriteToString(groupJsValue);
+    success = success && attribute->setMetadata("uigroup", Ufe::Value(groupJsString));
+
+    return success;
+}
+
+static void setAttributesLayoutMetaData(
+    const UsdSceneItem::Ptr& sceneItem,
+    JsObject&                jsonToInspect,
+    int                      uiorder,
+    uifolder&                folderInfo)
+{
+    if (!sceneItem) {
+        return;
+    }
 
     if (jsonToInspect.find("items") != jsonToInspect.end()
         && jsonToInspect.find("group") != jsonToInspect.end()) {
@@ -653,7 +693,7 @@ getAttributeLayoutPosition(JsObject& jsonToInspect, int uiorder, uifolder& folde
         int groupOrder = 1;
         for (auto& groupJsValue : jsonValueGroupItems.GetJsArray()) {
             auto jsonGroup = groupJsValue.GetJsObject();
-            getAttributeLayoutPosition(jsonGroup, groupOrder, folderInfo);
+            setAttributesLayoutMetaData(sceneItem, jsonGroup, groupOrder, folderInfo);
             ++groupOrder;
         }
 
@@ -668,12 +708,10 @@ getAttributeLayoutPosition(JsObject& jsonToInspect, int uiorder, uifolder& folde
             attrUi.folder = folderInfo;
             // Save attr position inside the group.
             attrUi.folder.uiorder.push_back(position);
-            uiAttributes.push_back(attrUi);
+            setAttributeLayoutMetaData(sceneItem, attrUi);
             ++position;
         }
     }
-
-    return uiAttributes;
 }
 void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string& layout)
 {
@@ -691,19 +729,14 @@ void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string
 
                 // Start inspecting all groups.
                 if (jsonGroupItems.find("items") != jsonGroupItems.end()) {
-                    auto                     jsonValueGroupItems = jsonGroupItems["items"];
-                    std::vector<uiattribute> uiAttrs;
+                    auto jsonValueGroupItems = jsonGroupItems["items"];
 
                     int groupOrder = 1;
                     for (auto& group : jsonValueGroupItems.GetJsArray()) {
                         uifolder folderInfo;
                         auto     groupJson = group.GetJsObject();
-                        auto     attrsLayout
-                            = getAttributeLayoutPosition(groupJson, groupOrder, folderInfo);
+                        setAttributesLayoutMetaData(item, groupJson, groupOrder, folderInfo);
                         ++groupOrder;
-                        if (!attrsLayout.empty()) {
-                            uiAttrs.insert(uiAttrs.end(), attrsLayout.begin(), attrsLayout.end());
-                        }
                     }
                 }
             }
