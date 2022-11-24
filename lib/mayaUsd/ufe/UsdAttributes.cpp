@@ -635,6 +635,68 @@ struct uiattribute
     uifolder    folder;
 };
 
+std::set<std::string>
+getSubGroupsNames(const std::string& groupName, const std::vector<uiattribute>& uiSortedAttributes)
+{
+    std::set<std::string> subGroupsNames;
+
+    int  groupUiPosition = 0;
+    bool found = false;
+
+    // Find the group into the folders.
+    for (auto i = 0; i < uiSortedAttributes.size(); ++i) {
+
+        auto uiGroup = uiSortedAttributes[i].folder.uigroup;
+
+        for (auto j = 0; j < uiGroup.size(); ++j) {
+            // Group name found.
+            if (uiGroup[j] == groupName) {
+                groupUiPosition = j;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    // Find the sub groups.
+    for (auto i = 0; i < uiSortedAttributes.size() && found; ++i) {
+
+        auto uiGroup = uiSortedAttributes[i].folder.uigroup;
+
+        for (auto j = groupUiPosition; j < uiGroup.size(); ++j) {
+
+            if (uiGroup[groupUiPosition] != groupName) {
+                break;
+            }
+
+            if (j != groupUiPosition) {
+                subGroupsNames.insert(uiGroup[j]);
+            }
+        }
+    }
+
+    return subGroupsNames;
+}
+
+std::vector<std::string> getAttributesNamesInGroup(
+    const std::string&              groupName,
+    const std::vector<uiattribute>& uiSortedAttributes)
+{
+    std::vector<std::string> attributesNames;
+
+    // Find the group into the folders.
+    for (auto i = 0; i < uiSortedAttributes.size(); ++i) {
+
+        auto uiGroup = uiSortedAttributes[i].folder.uigroup;
+
+        if (uiGroup[uiGroup.size() - 1] == groupName) {
+            attributesNames.push_back(uiSortedAttributes[i].attributeName);
+        }
+    }
+
+    return attributesNames;
+}
+
 static bool getAttributeLayoutMetaData(const Ufe::Attribute::Ptr attribute, uiattribute& attrLayout)
 {
     JsParseError parseError;
@@ -695,6 +757,65 @@ static bool getAttributeLayoutMetaData(const Ufe::Attribute::Ptr attribute, uiat
 
     return validAttrLayout;
 }
+
+static JsObject
+buildJson(const std::string& groupName, const std::vector<uiattribute>& uiSortedAttributes)
+{
+    const auto subGroupsNames = getSubGroupsNames(groupName, uiSortedAttributes);
+    JsArray    items;
+    JsObject   jsObj;
+
+    if (subGroupsNames.empty()) {
+        const auto attributesNames = getAttributesNamesInGroup(groupName, uiSortedAttributes);
+        jsObj["group"] = JsValue(groupName);
+
+        if (!attributesNames.empty()) {
+            for (const auto& attr : attributesNames) {
+                JsObject jsObjPort;
+                jsObjPort["port"] = JsValue(attr);
+                items.push_back(JsValue(jsObjPort));
+            }
+            jsObj["items"] = JsValue(items);
+        }
+    } else {
+        jsObj["group"] = JsValue(groupName);
+        // Explore the nested groups.
+        for (const auto& subGroup : subGroupsNames) {
+            JsObject jsGroupObj = buildJson(subGroup, uiSortedAttributes);
+            items.push_back(JsValue(jsGroupObj));
+        }
+        jsObj["items"] = JsValue(items);
+    }
+
+    return jsObj;
+}
+static void clearLayoutMetaData(const UsdSceneItem::Ptr& sceneItem)
+{
+
+    for (const auto& attrName : UsdAttributes(sceneItem).attributeNames()) {
+        if (!UsdAttributes(sceneItem).hasAttribute(attrName)) {
+            continue;
+        }
+        auto attr = UsdAttributes(sceneItem).attribute(attrName);
+
+        if (!attr) {
+            continue;
+        }
+
+        auto metaDataUIOrder = attr->getMetadata("uiorder");
+
+        if (!metaDataUIOrder.empty()) {
+            attr->clearMetadata("uiorder");
+        }
+
+        auto metaDataUIGroup = attr->getMetadata("uigroup");
+
+        if (!metaDataUIGroup.empty()) {
+            attr->clearMetadata("uigroup");
+        }
+    }
+}
+
 static std::string buildLayout(const UsdSceneItem::Ptr& sceneItem)
 {
     std::vector<uiattribute> attrWithUILayout;
@@ -703,14 +824,12 @@ static std::string buildLayout(const UsdSceneItem::Ptr& sceneItem)
         if (!UsdAttributes(sceneItem).hasAttribute(attrName)) {
             continue;
         }
-        auto attr = UsdAttributes(sceneItem).attribute(attrName);
-        // if (attr->hasMetadata("uiorder") && attr->hasMetadata("uigroup")) {
+        auto        attr = UsdAttributes(sceneItem).attribute(attrName);
         uiattribute attrUI;
 
         if (getAttributeLayoutMetaData(attr, attrUI)) {
             attrWithUILayout.push_back(attrUI);
         }
-        //}
     }
 
     if (attrWithUILayout.empty()) {
@@ -736,25 +855,30 @@ static std::string buildLayout(const UsdSceneItem::Ptr& sceneItem)
 
         return false;
     };
-    // Order the attribute based on uiorder
+    // Order the attribute based on uiorder.
     std::sort(attrWithUILayout.begin(), attrWithUILayout.end(), orderGroups);
 
     // Root JsValue
-    JsValue root;
+    JsObject              jsNodeLayout;
+    std::set<std::string> rootGroupsNames;
+    JsArray               items;
+
+    for (const auto& attrUi : attrWithUILayout) {
+        const auto groupRootName = attrUi.folder.uigroup[0];
+
+        if (rootGroupsNames.find(groupRootName) == rootGroupsNames.end()) {
+            JsObject jsObj = buildJson(groupRootName, attrWithUILayout);
+            items.push_back(JsValue(jsObj));
+            rootGroupsNames.insert(groupRootName);
+        }
+    }
 
     JsObject jsObj;
-    jsObj["group"] = JsValue("Test");
+    jsObj["items"] = JsValue(items);
+    jsObj["hideUndeclaredPorts"] = JsValue(false);
+    jsNodeLayout["NodeLayout"] = JsValue(jsObj);
 
-    JsArray  ports;
-    JsObject jsObjPort;
-    jsObjPort["port"] = JsValue("clearcoat");
-    ports.push_back(JsValue(jsObjPort));
-    jsObj["items"] = JsValue(ports);
-
-    const std::string orderJsString = JsWriteToString(jsObj);
-    JsArray           items;
-
-    return orderJsString;
+    return JsWriteToString(jsNodeLayout);
 }
 
 static bool
@@ -803,6 +927,9 @@ static void setAttributesLayoutMetaData(
     if (!sceneItem) {
         return;
     }
+
+    // Clear the old layout metadata.
+    clearLayoutMetaData(sceneItem);
 
     if (jsonToInspect.find("items") != jsonToInspect.end()
         && jsonToInspect.find("group") != jsonToInspect.end()) {
