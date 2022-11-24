@@ -695,31 +695,68 @@ static bool getAttributeLayoutMetaData(const Ufe::Attribute::Ptr attribute, uiat
 
     return validAttrLayout;
 }
-/*
-std::string UsdAttributes::buildLayout()
+static std::string buildLayout(const UsdSceneItem::Ptr& sceneItem)
 {
     std::vector<uiattribute> attrWithUILayout;
 
-    for (const auto& attrName : attributeNames()) {
-        if (!hasAttribute(attrName)) {
+    for (const auto& attrName : UsdAttributes(sceneItem).attributeNames()) {
+        if (!UsdAttributes(sceneItem).hasAttribute(attrName)) {
             continue;
         }
-        auto attr = attribute(attrName);
-        if (attr->hasMetadata("uiorder") && attr->hasMetadata("uigroup")) {
-            //attrWithUILayout.push_back(getAttributeLayoutMetaData(attr));
+        auto attr = UsdAttributes(sceneItem).attribute(attrName);
+        // if (attr->hasMetadata("uiorder") && attr->hasMetadata("uigroup")) {
+        uiattribute attrUI;
+
+        if (getAttributeLayoutMetaData(attr, attrUI)) {
+            attrWithUILayout.push_back(attrUI);
         }
+        //}
     }
 
-    auto orderGroups
-        = [](const Ufe::Attribute::Ptr& attr1, const Ufe::Attribute::Ptr& attr2) -> bool {
-        return a.mProperty > b.mProperty;
+    if (attrWithUILayout.empty()) {
+        return "";
+    }
+
+    auto orderGroups = [](const uiattribute& uiAttr1, const uiattribute& uiAttr2) -> bool {
+        // Get the smallest.
+        auto uiorder1 = uiAttr1.folder.uiorder;
+        auto uiorder2 = uiAttr2.folder.uiorder;
+
+        auto size = uiorder1.size() < uiorder2.size() ? uiorder1.size() : uiorder2.size();
+
+        for (unsigned i = 0; i < size; ++i) {
+
+            if (uiorder1[i] < uiorder2[i]) {
+                return true;
+            }
+            if (uiorder1[i] > uiorder2[i]) {
+                return false;
+            }
+        }
+
+        return false;
     };
-
-
     // Order the attribute based on uiorder
-    return "";
+    std::sort(attrWithUILayout.begin(), attrWithUILayout.end(), orderGroups);
+
+    // Root JsValue
+    JsValue root;
+
+    JsObject jsObj;
+    jsObj["group"] = JsValue("Test");
+
+    JsArray  ports;
+    JsObject jsObjPort;
+    jsObjPort["port"] = JsValue("clearcoat");
+    ports.push_back(JsValue(jsObjPort));
+    jsObj["items"] = JsValue(ports);
+
+    const std::string orderJsString = JsWriteToString(jsObj);
+    JsArray           items;
+
+    return orderJsString;
 }
-*/
+
 static bool
 setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute& uiAttr)
 {
@@ -754,9 +791,7 @@ setAttributeLayoutMetaData(const UsdSceneItem::Ptr& sceneItem, const uiattribute
     const std::string groupJsString = JsWriteToString(groupJsValue);
     success = success && attribute->setMetadata("uigroup", Ufe::Value(groupJsString));
 
-    uiattribute tmp;
-    auto        test = getAttributeLayoutMetaData(attribute, tmp);
-    return success && test;
+    return success;
 }
 
 static void setAttributesLayoutMetaData(
@@ -827,6 +862,9 @@ void UsdAttributes::doSetLayout(const UsdSceneItem::Ptr& item, const std::string
                     }
                 }
             }
+
+            // Test
+            buildLayout(item);
         }
     } catch (...) {
         return;
